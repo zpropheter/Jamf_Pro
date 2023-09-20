@@ -32,6 +32,9 @@ read -p 'Username: ' APIUSER
 read -sp 'Password: ' APIPASS
 echo -e "\n Please enter your full server URL starting with https://"
 read -p 'ServerURL: ' url
+echo -e "\n Please enter the ID of the device you want to return to service"
+read -p 'Device ID: ' deviceid
+
 
 #HARD CODED VARIABLE FOR API BEARER TOKEN RETRIEVAL
 getBearerToken() {
@@ -41,9 +44,17 @@ getBearerToken() {
 
 getBearerToken 
 
-#Management ID can be seen in the device record
-echo -e "\n Please enter the ManagementId of the device you would like to return to service:"
-read -p 'ManagementId: ' managementId
+getManagementId() {
+	mobiledevicerecord=$(curl -X 'GET' \
+	"$url/api/v2/mobile-devices/$deviceid" \
+	-H 'accept: application/json' \
+	-H "Authorization: Bearer $bearerToken")
+	managementId=$(/usr/bin/plutil -extract "managementId" raw -o - - <<< "$mobiledevicerecord")
+	echo "Management ID: $managementId"
+}
+
+getManagementId 
+
 #Download the .mobileconfig file for the wi-fi you want and enter the file path or drag and drop it when prompted
 echo -e "\n Please enter the file path of the Wi-Fi Configuration Profile you would like to use:"
 read -p 'configProfilePath: ' configProfilePath
