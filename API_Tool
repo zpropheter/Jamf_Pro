@@ -1,0 +1,127 @@
+#!/bin/zsh
+#set -x 
+
+#You must install swiftDialog to run this tool https://github.com/swiftDialog/swiftDialog
+#Built as an exercise in understanding swiftDialog. At initial creation it is a bit clunky and repetitive
+
+#Script to run return to service on Jamf Pro
+#Currently the only way to run this feature is via the API
+#This script is built for devices already in ADE as it does not tell the device what MDM Profile to install, only a wi-fi profile
+#You can elect to hard code any of the variables as desired, the intent was to create the ability to pass the script around to anyone to try
+#This was last confirmed operational on 9/19/23
+
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#        * Redistributions of source code must retain the above copyright
+#         notice, this list of conditions and the following disclaimer.
+#      * Redistributions in binary form must reproduce the above copyright
+#           notice, this list of conditions and the following disclaimer in the
+#           documentation and/or other materials provided with the distribution.
+#         * Neither the name of the JAMF Software, LLC nor the
+#           names of its contributors may be used to endorse or promote products
+#           derived from this software without specific prior written permission.
+# THIS SOFTWARE IS PROVIDED BY JAMF SOFTWARE, LLC "AS IS" AND ANY
+# EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL JAMF SOFTWARE, LLC BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+#HARD CODED VARIABLE FOR API BEARER TOKEN RETRIEVAL
+getBearerToken() {
+	response=$(curl -s -u "$APIUSER":"$APIPASS" "$url"/api/v1/auth/token -X POST)
+	bearerToken=$(echo "$response" | plutil -extract token raw -)
+}
+
+getManagementId() {
+	mobiledevicerecord=$(curl -X 'GET' \
+	"$url/api/v2/mobile-devices/$deviceid" \
+	-H 'accept: application/json' \
+	-H "Authorization: Bearer $bearerToken")
+	managementId=$(/usr/bin/plutil -extract "managementId" raw -o - - <<< "$mobiledevicerecord")
+	echo "Management ID: $managementId"
+}
+
+returnToService() {
+	returnCommand=$(		curl --request POST \
+		--url "$url"/api/preview/mdm/commands \
+		--header "Authorization: Bearer $bearerToken" \
+		--header 'accept: application/json' \
+		--header 'content-type: application/json' \
+		--data '
+{
+	"clientData": [
+		{
+			"managementId": "'$managementId'"
+		}
+	],
+	"commandData": {
+		"commandType": "ERASE_DEVICE",
+		"returnToService": {
+			"enabled": true,
+			"wifiProfileData": "'$base64pathwifi'"
+		}
+	}
+}
+'
+)
+}
+
+getComputerManagementId() {
+	computerdevicerecord=$(curl -X 'GET' \
+	"$url/api/v1/computers-inventory-detail/$deviceid" \
+	-H 'accept: application/json' \
+	-H "Authorization: Bearer $bearerToken")
+	computermanagementId=$(/usr/bin/plutil -extract "general"."managementId" raw -o - - <<< "$computerdevicerecord")
+	#	echo "Management ID: $computermanagementId"
+}
+
+getLAPSPassword() {
+	queryForPassword=$(curl -s -X GET "$url/api/v2/local-admin-password/$computermanagementId/account/$LAPSUsername/password" -H "Authorization: Bearer ${bearerToken}" -H "Content-Type: application/json")
+}
+
+dialogOutput=$(/usr/local/bin/dialog --title "Jamf API Tool" --message "Welcome to the Jamf API Tool. Select the API call you want to use:" --moveable --medium --selecttitle "API Calls" --selectvalues "LAPS,Redeploy Framework,Return to Service" --button2text "Cancel" --textfield  "API Username",required --textfield "API Password",secure,required --textfield "Server URL",required,value="https://zpropheter.jamfcloud.com")
+		APIUSER=$( echo "$dialogOutput" | grep "API Username" | awk -F " : " '{print $NF}' )
+		APIPASS=$( echo "$dialogOutput" | grep "API Password" | awk -F " : " '{print $NF}' )
+		url=$( echo "$dialogOutput" | grep "Server URL" | awk -F " : " '{print $NF}' )
+
+echo "$dialogOutput"
+
+option=$( echo "$dialogOutput" | grep "SelectedOption" | awk -F " : " '{print $NF}' )
+
+#Can be commented out in production
+echo "Option: ${option}"
+
+if [[  $option == '"LAPS"' ]]; then
+	dialogOutput=$(/usr/local/bin/dialog --title "LAPS" --message "Fill out the following information to retrieve the LAPS password for a computer:" --moveable --medium --textfield "Computer ID",required --textfield  "LAPS Username",required )
+		deviceid=$( echo "$dialogOutput" | grep "Computer ID" | awk -F " : " '{print $NF}' )
+		LAPSUsername=$( echo "$dialogOutput" | grep "LAPS Username" | awk -F " : " '{print $NF}' )
+		getBearerToken
+		getComputerManagementId
+		getLAPSPassword
+		echo "$queryForPassword"
+		LAPSPassword=$(/usr/bin/plutil -extract "password" raw -o - - <<< "$queryForPassword")
+		dialogOutput=$(/usr/local/bin/dialog --title "LAPS" --message "Password for $LAPSUsername on Computer with ID $deviceid is: $LAPSPassword" --moveable --medium)
+elif [[  $option == '"Return to Service"' ]]; then
+		dialogOutput=$(/usr/local/bin/dialog --title "Return to Service" --message "Fill out the following information to send a Return to Service command to a device:" --moveable --medium --textfield "Device ID" --textfield "Wi-Fi .mobileconfig file,fileselect,required" )
+		echo "$dialogOutput"
+		deviceid=$( echo "$dialogOutput" | grep "Device ID" | awk -F " : " '{print $NF}' )
+		configProfilePath=$( echo "$dialogOutput" | grep "Wi-Fi .mobileconfig file" | awk -F " : " '{print $NF}' )
+		#Convert config profile to base64 as required
+		base64pathwifi=$(base64 < "$configProfilePath")
+		getBearerToken 
+		getManagementId
+		returnToService
+		dialogOutput=$(/usr/local/bin/dialog --title "Return to Service" --message "Return to Service command has been sent. Please check the device and confirm the command was received" --moveable --medium --button1text "OK"  )
+elif [[ $option == '"Return to Service"' ]]; then
+echo "Redeploy Framework selected"
+else
+echo "No Option selected"
+fi
+
+
+		
