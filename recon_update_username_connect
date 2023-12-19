@@ -7,4 +7,4 @@ userName=$(defaults read /Users/$loggedInUser/Library/Preferences/com.jamf.conne
 echo $userName
 
 #use value from username to update device record
-jamf recon -endUserName $userName
+jamf recon -endUsername $userName
