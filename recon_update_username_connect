@@ -1,0 +1,10 @@
+#!/bin/bash
+
+loggedInUser=$( echo "show State:/Users/ConsoleUser" | /usr/sbin/scutil | /usr/bin/awk '/Name :/ && ! /loginwindow/ { print $3 }' )
+userName=$(defaults read /Users/$loggedInUser/Library/Preferences/com.jamf.connect.state.plist DisplayName)
+
+#test to confirm proper value from plist
+echo $userName
+
+#use value from username to update device record
+jamf recon -endUserName $userName
