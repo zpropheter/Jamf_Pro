@@ -21,6 +21,7 @@ getBearerToken() {
 
 ####################################################################################################
 #Rename Configuration Profile
+#https://developer.jamf.com/jamf-pro/reference/updateosxconfigurationprofilebyid
 
 renameConfigProfile() {
 /usr/bin/curl -sk "$url/JSSResource/osxconfigurationprofiles/id/$configprofileid" \
