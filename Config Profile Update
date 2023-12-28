@@ -1,0 +1,51 @@
+#!/bin/bash
+
+url="https://yourserver.jamfcloud.com"
+username="username"
+password="password"
+configprofileid="CONFIGPROFILEIDGOESHERE"
+newName="NEWCONFIGPROFILENAMEGOESHERE"
+
+####################################################################################################
+# Array Configurations
+
+####################################################################################################
+#API BEARER TOKEN RETRIEVAL
+getBearerToken() {
+	response=$(curl -s -u "$username":"$password" "$url"/api/v1/auth/token -X POST 2>/dev/null)
+	bearerToken=$(echo "$response" | plutil -extract token raw -)
+	tokenExpiration=$(echo "$response" | plutil -extract expires raw - | awk -F . '{print $1}')
+	tokenExpirationEpoch=$(date -j -f "%Y-%m-%dT%T" "$tokenExpiration" +"%s")
+}
+
+
+####################################################################################################
+#Rename Configuration Profile
+
+renameConfigProfile() {
+/usr/bin/curl -sk "$url/JSSResource/osxconfigurationprofiles/id/$configprofileid" \
+	-H "Authorization: Bearer $bearerToken" \
+	-H "Content-Type: text/xml" \
+	--request PUT \
+	--data "$flatXML"
+}
+
+####################################################################################################
+# API submission command
+xmlData="<os_x_configuration_profile>
+	<general>
+		<name>$newName</name>
+	</general>
+	</os_x_configuration_profile>"
+
+
+# flattened XML
+flatXML=$( /usr/bin/xmllint --noblanks - <<< "$xmlData" )
+
+echo "$flatXML"
+echo ""
+
+####################################################################################################
+
+getBearerToken 
+renameConfigProfile 
