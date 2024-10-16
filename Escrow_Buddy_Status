@@ -1,0 +1,11 @@
+#!/bin/bash
+
+escrowBuddyCapable=$(sudo profiles show -output stdout-xml | grep  "FDERecoveryKeyEscrow")
+
+if [[ $escrowBuddyCapable != "" ]]; then
+	status="Enabled"
+else
+	status="Disabled"
+fi
+
+echo "<result>$status</result>"
