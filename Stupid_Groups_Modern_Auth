@@ -1,0 +1,123 @@
+#!/bin/bash
+
+####################################################################################################
+url="https://yourserver.jamfcloud.com"
+username="username"
+password="password"
+
+
+
+####################################################################################################
+#Enter the ID number of the Smart Group to pull from
+smartGroup="smartGroupIDHere"
+#Enter the name of the static group you want to create with no spaces (use underscore or hyphens)
+staticGroupName="NewStaticGroupNameHereNoSpaces"
+
+####################################################################################################
+
+# Array Configurations
+
+####################################################################################################
+
+stickyCheck=$(curl --head $url | grep set-cookie | awk '{print $2}' | sed 's|[;]||g')
+
+for cookie in $stickyCheck
+do
+	goodCookie=$(echo $cookie | grep APBALANCEID)
+	if [[ $goodCookie == "" ]]; then
+		goodCookie=$(echo $cookie | grep jpro-ingress)
+		goodCookie=\"${goodCookie}\"
+	else
+		goodCookie=\"${goodCookie}\"
+	fi
+done
+
+####################################################################################################
+#API BEARER TOKEN RETRIEVAL
+getBearerToken() {
+	response=$(curl -b $goodCookie -s -u "$username":"$password" "$url"/api/v1/auth/token -X POST 2>/dev/null)
+	bearerToken=$(echo "$response" | plutil -extract token raw -)
+	tokenExpiration=$(echo "$response" | plutil -extract expires raw - | awk -F . '{print $1}')
+	tokenExpirationEpoch=$(date -j -f "%Y-%m-%dT%T" "$tokenExpiration" +"%s")
+}
+
+####################################################################################################
+
+getSmartGroupMembership() {
+	smartGroupMembers=$(curl -b $goodCookie -X 'GET' \
+	"$url/api/v2/computer-groups/smart-group-membership/$smartGroup" 2>/dev/null\
+	-H 'accept: application/json' \
+	-H "Authorization: Bearer $bearerToken")
+	memberList=$(echo $smartGroupMembers | jq .members[])
+	echo Adding the following computer IDs to Static Group $staticGroupName: $memberList
+}
+
+####################################################################################################
+
+# API submission command
+xmlData="<computer_group>
+	<name>$staticGroupName</name>
+	<is_smart>false</is_smart>
+	<site>
+		<id>-1</id>
+		<name>None</name>
+	</site>
+</computer_group>"
+
+
+# flattened XML
+flatXML=$( /usr/bin/xmllint --noblanks - <<< "$xmlData" )
+
+#echo "$flatXML"
+#echo ""
+####################################################################################################
+
+createStaticGroup() {
+	createStaticGroup=$(curl -b $goodCookie --request POST \
+--url "$url/JSSResource/computergroups/id/0" 2>/dev/null\
+	-H "Authorization: Bearer $bearerToken"	\
+	-H "Content-Type: text/xml" \
+	--data "$flatXML")
+	staticGroupID=$(echo "$createStaticGroup" | xmllint --xpath '/computer_group/id/text()' -)
+}
+
+####################################################################################################
+#Add computers to created smart group
+
+# API submission command
+addComputersToSmartGroup(){
+	echo "<computer_group>
+<computer_additions>" >/tmp/xml.txt
+	for ID in $memberList
+	do
+		echo "<computer>
+<id>$ID</id>
+</computer>" >>/tmp/xml.txt
+	done
+	echo "</computer_additions>
+</computer_group>" >>/tmp/xml.txt
+	# flattened XML
+	xmlData2=$(cat /tmp/xml.txt)
+	flatXML2=$( /usr/bin/xmllint --noblanks - <<< "$xmlData2" )
+
+	echo "$flatXML2"
+	curl --request PUT \
+	--url $url/JSSResource/computergroups/name/$staticGroupName \
+	-H "Authorization: Bearer $bearerToken"	\
+	-H "Content-Type: text/xml" \
+	--data "$flatXML2"
+	echo ""
+}
+
+
+
+
+####################################################################################################
+
+
+getBearerToken 
+getSmartGroupMembership 
+createStaticGroup
+#tried to setup sticky groups but no luck, hard coded 1 min pause to make sure static group available on both nodes and avoid errors.
+sleep 60
+addComputersToSmartGroup 
