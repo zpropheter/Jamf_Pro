@@ -1,5 +1,5 @@
 #!/bin/bash
 
 echo "this is a test"
-echo "$4"
-echo "$test"
+echo "$ARG2"
+echo "$ARG1"
