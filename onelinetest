@@ -4,5 +4,6 @@ CustomApp1Name="$4"
 CustomApp1Folder=$log_folder/$CustomApp1Name
 CustomApp1LogSource="$5"
 
+echo "here is out test"
 echo $4
 echo $5
