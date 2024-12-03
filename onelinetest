@@ -3,3 +3,5 @@
 echo "here is out test"
 echo "$4"
 echo "$5"
+echo "$CustomApp1Name"
+echo "$CustomApp1LogSource"
