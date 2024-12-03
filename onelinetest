@@ -1,5 +1,5 @@
 #!/bin/bash
 
 echo "here is out test"
-echo $4
-echo $5
+echo "$4"
+echo "$5"
