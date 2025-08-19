@@ -1,10 +1,6 @@
 #!/bin/bash
 
-#Script to run return to service on Jamf Pro
-#Currently the only way to run this feature is via the API
-#This script is built for devices already in ADE as it does not tell the device what MDM Profile to install, only a wi-fi profile
-#You can elect to hard code any of the variables as desired, the intent was to create the ability to pass the script around to anyone to try
-#This was last confirmed operational on 9/19/23
+#THIS WILL WIPE DEVICES, USE CAUTION WHEN TESTING
 
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
