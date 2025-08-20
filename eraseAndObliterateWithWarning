@@ -25,20 +25,24 @@
 
 #Put your jamfcloud URL below
 url="https://yourserver.jamfcloud.com"
-username="username"
-password="password"
+username='username'
+password='password'
 deviceid="##"
 
 
-#HARD CODED VARIABLE FOR API BEARER TOKEN RETRIEVAL
+
+####################################################################################################
+#API BEARER TOKEN RETRIEVAL
 getBearerToken() {
-	response=$(curl -s -u "$APIUSER":"$APIPASS" "$url"/api/v1/auth/token -X POST)
+	response=$(curl -s -u "$username":"$password" "$url"/api/v1/auth/token -X POST 2>/dev/null)
 	bearerToken=$(echo "$response" | plutil -extract token raw -)
+	tokenExpiration=$(echo "$response" | plutil -extract expires raw - | awk -F . '{print $1}')
+	tokenExpirationEpoch=$(date -j -f "%Y-%m-%dT%T" "$tokenExpiration" +"%s")
 }
 
 getBearerToken 
 
-getComputerManagementId() {
+ getComputerManagementId() {
 	computerdevicerecord=$(curl -X 'GET' \
 		"$url/api/v1/computers-inventory-detail/$deviceid" \
 		-H 'accept: application/json' \
@@ -50,22 +54,10 @@ getComputerManagementId() {
 getComputerManagementId 
 
 
+
 curl --request POST \
---url "$url"/api/preview/mdm/commands \
---header "Authorization: Bearer $bearerToken" \
+--url $url/api/v1/computer-inventory/$deviceid/erase \
 --header 'accept: application/json' \
 --header 'content-type: application/json' \
---data '
-{
-	"clientData": [
-		{
-			"managementId": "'$computermanagementId'"
-		}
-	],
-	"commandData": {
-		"commandType": "ERASE_DEVICE",
-		"obliterationBehavior": "ObliterateWithWarning",
-		"pin": "123456"
-	}
-}
-'
+--data '{"pin":"123456"}' \
+--header "Authorization: Bearer $bearerToken"
