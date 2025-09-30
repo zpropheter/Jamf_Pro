@@ -136,14 +136,16 @@ esac
 
 
 
-jq 'reduce .statusItems[] as $i ({}; 
-		if $i.key == "device.identifier.serial-number" 
-			or $i.key == "device.operating-system.marketing-name"
-			or ($i.key | test("^softwareupdate")) 
-		then .[$i.key] = $i.value else . end
+jq -s '[.[] | 
+	reduce .statusItems[] as $i ({}; 
+			if $i.key == "device.identifier.serial-number" 
+					or $i.key == "device.operating-system.marketing-name"
+					or ($i.key | test("^softwareupdate")) 
+			then .[$i.key] = $i.value else . end
 	)
 	+ (if .computerID? then {computerID: .computerID} else {} end)
-	+ (if .mobileID? then {mobileID: .mobileID} else {} end)' \
-$tmpReportFile > $reportFile
+	+ (if .mobileID? then {mobileID: .mobileID} else {} end)
+]' "$tmpReportFile" > "$reportFile"
+
 
 rm $tmpReportFile
