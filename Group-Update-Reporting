@@ -1,17 +1,15 @@
 #!/bin/bash
 
 ###########################################
-#hard code computer or mobile group and group ID here or uncomment in lines 102 and beyond to prompt for it
-computerOrMobile="M"
-smartgroupID="2"
+#hard code computer or mobile group and group ID here and comment out lines 105 and beyond to prompt for it
+#computerOrMobile="M"
+#smartgroupID="2"
 
 ###########################################
 # server connection information
 url="https://yourserver.jamfcloud.com"
 username='username'
 password='password'
-
-
 
 
 ####################################################################################################
@@ -104,9 +102,9 @@ checkDeclarations() {
 getBearerToken 
 
 
-#echo "Select from the options below to look up the declaration status by group "
-#read -p "C for Computers or M for Mobile Devices: " computerOrMobile
-#read -p "Enter the Group ID: " smartgroupID
+echo "Select from the options below to look up the declaration status by group "
+read -p "C for Computers or M for Mobile Devices: " computerOrMobile
+read -p "Enter the Group ID: " smartgroupID
 case $computerOrMobile in
 	C)
 		checkTokenExpiration 
@@ -143,9 +141,9 @@ jq 'reduce .statusItems[] as $i ({};
 			or $i.key == "device.operating-system.marketing-name"
 			or ($i.key | test("^softwareupdate")) 
 		then .[$i.key] = $i.value else . end
-	) + {computerID: .computerID, mobileID: .mobileID}' \
+	)
+	+ (if .computerID? then {computerID: .computerID} else {} end)
+	+ (if .mobileID? then {mobileID: .mobileID} else {} end)' \
 $tmpReportFile > $reportFile
-#rm $tmpReportFile
 
-
-
+rm $tmpReportFile
