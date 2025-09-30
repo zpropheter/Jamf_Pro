@@ -1,0 +1,151 @@
+#!/bin/bash
+
+###########################################
+#hard code computer or mobile group and group ID here or uncomment in lines 102 and beyond to prompt for it
+computerOrMobile="M"
+smartgroupID="2"
+
+###########################################
+# server connection information
+url="https://yourserver.jamfcloud.com"
+username='username'
+password='password'
+
+
+
+
+####################################################################################################
+#tmp report file will get all declaration values, the reportFile will get just device serial and any software update statuses
+tmpReportFile="/tmp/Report.json"
+reportFile="$HOME/Desktop/Report.json"
+####################################################################################################
+#Cleanup from last run
+rm -f $reportFile
+rm -f $tmpReportFile
+touch $reportFile
+####################################################################################################
+#API BEARER TOKEN RETRIEVAL
+getBearerToken() {
+	response=$(curl -s -u "$username":"$password" "$url"/api/v1/auth/token -X POST 2>/dev/null)
+	bearerToken=$(echo "$response" | plutil -extract token raw -)
+	tokenExpiration=$(echo "$response" | plutil -extract expires raw - | awk -F . '{print $1}')
+	tokenExpirationEpoch=$(date -j -f "%Y-%m-%dT%T" "$tokenExpiration" +"%s")
+}
+
+checkTokenExpiration() {
+	nowEpochUTC=$(date -j -f "%Y-%m-%dT%T" "$(date -u +"%Y-%m-%dT%T")" +"%s")
+	if [[ tokenExpirationEpoch -gt nowEpochUTC ]]
+	then
+		:
+	else
+		echo "No valid token available, getting new token"
+		getBearerToken
+	fi
+}
+
+invalidateToken() {
+	responseCode=$(curl -w "%{http_code}" -H "Authorization: Bearer ${bearerToken}" $url/api/v1/auth/invalidate-token -X POST -s -o /dev/null)
+	if [[ ${responseCode} == 204 ]]
+	then
+		echo "Token successfully invalidated"
+		bearerToken=""
+		tokenExpirationEpoch="0"
+	elif [[ ${responseCode} == 401 ]]
+	then
+		echo "Token already invalid" 2> /dev/null
+	else
+		echo "An unknown error occurred invalidating the token" 2> /dev/null
+	fi
+}
+
+getSmartMobileGroupIDs() {
+	listofDevices=$(curl -X 'GET' \
+"$url/JSSResource/mobiledevicegroups/id/$smartgroupID" \
+-H 'accept: application/xml' \
+-H "Authorization: Bearer $bearerToken")
+	listofIds=$(echo "$listofDevices" | xmllint --xpath '/mobile_device_group/mobile_devices/mobile_device/id/text()' -)
+	echo $listofIds
+}
+
+getSmartComputerGroupIDs() {
+	listofDevices=$(curl -X 'GET' \
+"$url/JSSResource/computergroups/id/$smartgroupID" \
+-H 'accept: application/xml' \
+-H "Authorization: Bearer $bearerToken")
+	listofIds=$(echo "$listofDevices" | xmllint --xpath '/computer_group/computers/computer/id/text()' -)
+	#echo $listofIds
+}
+
+mobileManagementID() {
+	foundMgmtID=$(curl -X 'GET' \
+	"$url/api/v2/mobile-devices/$id" 2> /dev/null \
+	-H 'accept: application/json' \
+	-H "Authorization: Bearer $bearerToken"| jq -r '.managementId')
+	echo $foundMgmtID
+}
+
+computerManagementID() {
+	foundMgmtID=$(curl -X 'GET' \
+"$url/api/v2/computers-inventory/$id?section=GENERAL" 2> /dev/null \
+-H 'accept: application/json' \
+-H "Authorization: Bearer $bearerToken" | jq -r '.general.managementId')
+	echo $foundMgmtID
+}
+
+
+checkDeclarations() {
+	getDeclarations=$(curl -X 'GET' \
+"$url/api/v1/ddm/$foundMgmtID/status-items" 2> /dev/null \
+-H 'accept: application/json' \
+-H "Authorization: Bearer $bearerToken" )
+	#echo $getDeclarations
+}
+
+getBearerToken 
+
+
+#echo "Select from the options below to look up the declaration status by group "
+#read -p "C for Computers or M for Mobile Devices: " computerOrMobile
+#read -p "Enter the Group ID: " smartgroupID
+case $computerOrMobile in
+	C)
+		checkTokenExpiration 
+		getSmartComputerGroupIDs 
+		for id in $listofIds; do
+			computerManagementID 
+			checkDeclarations
+			if [[ $getDeclarations == "" ]]; then
+				echo "No declarations found for $foundMgmtID"
+			else
+				echo "$getDeclarations" | jq --arg cid "$id" '. + {computerID: $cid}' >> $tmpReportFile
+			fi
+		done
+	;;
+	M)
+		checkTokenExpiration 
+		getSmartMobileGroupIDs
+		for id in $listofIds; do
+			mobileManagementID
+			checkDeclarations
+			if [[ $getDeclarations == "" ]]; then
+				echo "No declarations found for $foundMgmtID"
+			else
+				echo "$getDeclarations" | jq --arg mid "$id" '. + {mobileID: $mid}' >> $tmpReportFile
+			fi
+		done
+	;;
+esac
+
+
+
+jq 'reduce .statusItems[] as $i ({}; 
+		if $i.key == "device.identifier.serial-number" 
+			or $i.key == "device.operating-system.marketing-name"
+			or ($i.key | test("^softwareupdate")) 
+		then .[$i.key] = $i.value else . end
+	) + {computerID: .computerID, mobileID: .mobileID}' \
+$tmpReportFile > $reportFile
+#rm $tmpReportFile
+
+
+
